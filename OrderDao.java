@@ -1,9 +1,11 @@
 package com.bookstore.dao;
 
+import com.bookstore.entity.OrderDetail;
 import com.bookstore.util.DbUtil;
 
 import java.math.BigDecimal;
 import java.sql.*;
+import java.util.ArrayList;
 import java.util.List;
 
 public class OrderDao {
@@ -62,4 +64,88 @@ public class OrderDao {
             return false;
         }
     }
+
+    // 更新订单状态
+    public boolean updateOrderStatus(long orderId, String newStatus) {
+        String sql = "UPDATE Orders SET status = ? WHERE order_id = ?";
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, newStatus);
+            ps.setLong(2, orderId);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    // 恢复库存（单本书 + 数量）
+    public boolean restoreStock(long bookId, int quantity) {
+        String sql = "UPDATE Books SET stock = stock + ? WHERE book_id = ?";
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, quantity);
+            ps.setLong(2, bookId);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    // 根据订单ID查询所有明细（用于取消时恢复库存）
+    public List<OrderDetail> getOrderDetails(long orderId) {
+        List<OrderDetail> list = new ArrayList<>();
+        String sql = "SELECT * FROM OrderDetails WHERE order_id = ?";
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, orderId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    list.add(new OrderDetail(
+                            rs.getLong("detail_id"),
+                            rs.getLong("order_id"),
+                            rs.getLong("book_id"),
+                            rs.getInt("quantity"),
+                            rs.getBigDecimal("unit_price"),
+                            rs.getBigDecimal("subtotal")
+                    ));
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return list;
+    }
+
+    // 创建物流记录（发货时调用）
+    public boolean createShipping(long orderId, String trackingNumber, String company) {
+        String sql = "INSERT INTO ShippingRecords (order_id, tracking_number, ship_date, status, company) " +
+                "VALUES (?, ?, NOW(), '已揽件', ?)";
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, orderId);
+            ps.setString(2, trackingNumber);
+            ps.setString(3, company);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    // 更新物流状态（可选，后续扩展）
+    public boolean updateShippingStatus(long orderId, String newStatus) {
+        String sql = "UPDATE ShippingRecords SET status = ? WHERE order_id = ?";
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, newStatus);
+            ps.setLong(2, orderId);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
 }
+
