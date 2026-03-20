@@ -1,5 +1,6 @@
 package com.bookstore.service;
 
+import com.bookstore.entity.OrderDetail;
 import com.bookstore.dao.BookDao;
 import com.bookstore.dao.OrderDao;
 import com.bookstore.entity.Book;
@@ -90,6 +91,86 @@ public class OrderService {
                 } catch (SQLException e) {
                     e.printStackTrace();
                 }
+            }
+        }
+    }
+
+    // 改变订单状态（带简单校验）
+    public boolean changeOrderStatus(long orderId, String newStatus) {
+        // 简单状态机校验（可扩展为更严格的）
+        String[] validTransitions = {
+                "待付款→已付款", "已付款→已发货", "已发货→已完成", "待付款→已取消", "已付款→已取消"
+        };
+        // 这里可以查当前状态再判断是否允许变更（课设简化先不做）
+        return orderDao.updateOrderStatus(orderId, newStatus);
+    }
+
+    // 取消订单（事务：改状态 + 恢复库存）
+    public boolean cancelOrder(long orderId) {
+        Connection conn = null;
+        try {
+            conn = DbUtil.getConnection();
+            conn.setAutoCommit(false);
+
+            // 1. 检查订单是否存在且可取消（课设简化：假设可取消）
+            // 2. 获取所有明细，恢复库存
+            List<OrderDetail> details = orderDao.getOrderDetails(orderId);
+            for (OrderDetail detail : details) {
+                if (!orderDao.restoreStock(detail.bookId(), detail.quantity())) {
+                    throw new SQLException("恢复库存失败: bookId=" + detail.bookId());
+                }
+            }
+
+            // 3. 更新订单状态为“已取消”
+            if (!orderDao.updateOrderStatus(orderId, "已取消")) {
+                throw new SQLException("更新订单状态失败");
+            }
+
+            conn.commit();
+            return true;
+
+        } catch (SQLException e) {
+            if (conn != null) {
+                try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
+            }
+            e.printStackTrace();
+            return false;
+        } finally {
+            if (conn != null) {
+                try { conn.setAutoCommit(true); conn.close(); } catch (SQLException e) { e.printStackTrace(); }
+            }
+        }
+    }
+
+    // 发货操作（改订单状态为已发货 + 创建物流记录）
+    public boolean shipOrder(long orderId, String trackingNumber, String company) {
+        Connection conn = null;
+        try {
+            conn = DbUtil.getConnection();
+            conn.setAutoCommit(false);
+
+            // 1. 改订单状态为“已发货”
+            if (!orderDao.updateOrderStatus(orderId, "已发货")) {
+                throw new SQLException("更新订单状态为已发货失败");
+            }
+
+            // 2. 创建物流记录
+            if (!orderDao.createShipping(orderId, trackingNumber, company)) {
+                throw new SQLException("创建物流记录失败");
+            }
+
+            conn.commit();
+            return true;
+
+        } catch (SQLException e) {
+            if (conn != null) {
+                try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
+            }
+            e.printStackTrace();
+            return false;
+        } finally {
+            if (conn != null) {
+                try { conn.setAutoCommit(true); conn.close(); } catch (SQLException e) { e.printStackTrace(); }
             }
         }
     }
