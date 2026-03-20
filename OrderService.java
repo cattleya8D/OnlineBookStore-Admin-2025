@@ -4,7 +4,9 @@ import com.bookstore.entity.OrderDetail;
 import com.bookstore.dao.BookDao;
 import com.bookstore.dao.OrderDao;
 import com.bookstore.entity.Book;
+import com.bookstore.entity.ShippingRecord;
 import com.bookstore.util.DbUtil;
+import com.bookstore.entity.Order;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -173,5 +175,31 @@ public class OrderService {
                 try { conn.setAutoCommit(true); conn.close(); } catch (SQLException e) { e.printStackTrace(); }
             }
         }
+    }
+
+    // 更新物流状态（只有“已发货”订单才能更新物流）
+    public boolean updateShipping(long orderId, String newStatus) {
+        // 先查订单当前状态
+        Order order = orderDao.getOrderById(orderId);  // 你需要先在OrderDao加这个getOrderById方法
+        if (order == null || !"已发货".equals(order.status())) {
+            System.out.println("只能对已发货订单更新物流状态");
+            return false;
+        }
+
+        // 简单校验：状态只能往前走（已揽件→运输中→已签收）
+        ShippingRecord shipping = orderDao.getShippingByOrderId(orderId);
+        if (shipping == null) return false;
+
+        String current = shipping.status();
+        if ("已签收".equals(current)) {
+            System.out.println("订单已签收，不能再改物流状态");
+            return false;
+        }
+        if ("运输中".equals(current) && !"已签收".equals(newStatus)) {
+            System.out.println("运输中只能更新为已签收");
+            return false;
+        }
+
+        return orderDao.updateShippingStatus(orderId, newStatus);
     }
 }
