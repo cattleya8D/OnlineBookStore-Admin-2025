@@ -63,11 +63,10 @@ public class MainFrame extends JFrame {
         cardLayout = new CardLayout();
         mainPanel = new JPanel(cardLayout);
 
-        // 图书面板（真实实现）
         mainPanel.add(new BookPanel(), "bookPanel");
+        mainPanel.add(new CustomerPanel(), "customerPanel");
 
         // 其他面板先用占位（后面几天填充）
-        mainPanel.add(new JLabel("客户管理面板（待实现）", SwingConstants.CENTER), "customerPanel");
         mainPanel.add(new JLabel("订单管理面板（待实现）", SwingConstants.CENTER), "orderPanel");
         mainPanel.add(new JLabel("物流管理面板（待实现）", SwingConstants.CENTER), "shippingPanel");
         mainPanel.add(new JLabel("评价管理面板（待实现）", SwingConstants.CENTER), "reviewPanel");
