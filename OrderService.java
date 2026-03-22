@@ -9,10 +9,8 @@ import com.bookstore.util.DbUtil;
 import com.bookstore.entity.Order;
 
 import java.math.BigDecimal;
-import java.sql.Connection;
-import java.sql.SQLException;
-import java.util.List;
-import java.util.Map;
+import java.sql.*;
+import java.util.*;
 
 public class OrderService {
 
@@ -151,12 +149,12 @@ public class OrderService {
             conn = DbUtil.getConnection();
             conn.setAutoCommit(false);
 
-            // 1. 改订单状态为“已发货”
+            // 1. 改订单状态为已发货
             if (!orderDao.updateOrderStatus(orderId, "已发货")) {
                 throw new SQLException("更新订单状态为已发货失败");
             }
 
-            // 2. 创建物流记录
+            // 2. 创建物流记录（默认 PENDING）
             if (!orderDao.createShipping(orderId, trackingNumber, company)) {
                 throw new SQLException("创建物流记录失败");
             }
@@ -201,5 +199,167 @@ public class OrderService {
         }
 
         return orderDao.updateShippingStatus(orderId, newStatus);
+    }
+
+    /**
+     * 按月份统计销售额（已完成/已签收订单）
+     * @param year 指定年份（如2025），null表示所有年
+     * @return Map<月份如"2025-03", 销售额>
+     */
+    public Map<String, BigDecimal> getMonthlySales(Integer year) {
+        Map<String, BigDecimal> result = new LinkedHashMap<>();
+        String sql = """
+            SELECT DATE_FORMAT(o.order_date, '%Y-%m') AS month, 
+                   SUM(o.total_amount) AS total
+            FROM Orders o
+            WHERE o.status IN ('已完成', '已签收')
+            """ + (year != null ? " AND YEAR(o.order_date) = ? " : "") + """
+            GROUP BY month
+            ORDER BY month
+        """;
+
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            if (year != null) ps.setInt(1, year);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    result.put(rs.getString("month"), rs.getBigDecimal("total"));
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return result;
+    }
+
+    /**
+     * 畅销书排行（前N名，按销量降序）
+     * @param limit 返回前几名
+     * @return List<Map> 包含 book_id, title, total_quantity, total_sales
+     */
+    public List<Map<String, Object>> getTopSellingBooks(int limit) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        String sql = """
+            SELECT b.book_id, b.title, SUM(od.quantity) AS total_qty, 
+                   SUM(od.subtotal) AS total_sales
+            FROM OrderDetails od
+            JOIN Books b ON od.book_id = b.book_id
+            JOIN Orders o ON od.order_id = o.order_id
+            WHERE o.status IN ('已完成', '已签收')
+            GROUP BY b.book_id, b.title
+            ORDER BY total_qty DESC
+            LIMIT ?
+        """;
+
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, limit);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Map<String, Object> row = new HashMap<>();
+                    row.put("book_id", rs.getLong("book_id"));
+                    row.put("title", rs.getString("title"));
+                    row.put("total_quantity", rs.getInt("total_qty"));
+                    row.put("total_sales", rs.getBigDecimal("total_sales"));
+                    result.add(row);
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return result;
+    }
+
+    /**
+     * 整体退货率（已取消订单占比）
+     * @return 百分比，如 12.5
+     */
+    public double getCancelRate() {
+        String sqlTotal = "SELECT COUNT(*) FROM Orders";
+        String sqlCancel = "SELECT COUNT(*) FROM Orders WHERE status = '已取消'";
+        int total = 0, cancel = 0;
+        try (Connection conn = DbUtil.getConnection();
+             Statement stmt = conn.createStatement()) {
+            try (ResultSet rs = stmt.executeQuery(sqlTotal)) {
+                if (rs.next()) total = rs.getInt(1);
+            }
+            try (ResultSet rs = stmt.executeQuery(sqlCancel)) {
+                if (rs.next()) cancel = rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return total == 0 ? 0.0 : (double) cancel / total * 100;
+    }
+
+    /**
+     * 按分类统计销售额（饼图常用）
+     */
+    public List<Map<String, Object>> getSalesByCategory() {
+        List<Map<String, Object>> result = new ArrayList<>();
+        String sql = """
+            SELECT bc.category_name, SUM(od.subtotal) AS total_sales
+            FROM OrderDetails od
+            JOIN Books b ON od.book_id = b.book_id
+            JOIN BookCategories bc ON b.category_id = bc.category_id
+            JOIN Orders o ON od.order_id = o.order_id
+            WHERE o.status IN ('已完成', '已签收')
+            GROUP BY bc.category_id, bc.category_name
+            ORDER BY total_sales DESC
+        """;
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                Map<String, Object> row = new HashMap<>();
+                row.put("category", rs.getString("category_name"));
+                row.put("sales", rs.getBigDecimal("total_sales"));
+                result.add(row);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return result;
+    }
+
+    public List<OrderDetail> getOrderDetails(long orderId) {
+        return orderDao.getOrderDetails(orderId);
+    }
+
+    /**
+     * 获取所有订单（用于订单管理面板显示，先全量加载 + 内存分页，课设简单版）
+     * @return 所有订单列表
+     */
+    public List<Order> getAllOrders() {
+        List<Order> list = new ArrayList<>();
+        String sql = "SELECT order_id, customer_id, user_id, order_date, total_amount, status, payment_method, notes " +
+                "FROM Orders ORDER BY order_date DESC";
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                list.add(new Order(
+                        rs.getLong("order_id"),
+                        rs.getLong("customer_id"),
+                        rs.getLong("user_id"),
+                        rs.getTimestamp("order_date").toLocalDateTime(),
+                        rs.getBigDecimal("total_amount"),
+                        rs.getString("status"),
+                        rs.getString("payment_method"),
+                        rs.getString("notes")
+                ));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return list;
+    }
+
+    public List<Order> searchOrders(String keyword, String status, int page, int pageSize) {
+        return orderDao.searchOrders(keyword, status, page, pageSize);
+    }
+
+    public int getOrderCount(String keyword, String status) {
+        return orderDao.countOrders(keyword, status);
     }
 }
