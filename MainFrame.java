@@ -2,8 +2,6 @@ package com.bookstore.gui;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 
 public class MainFrame extends JFrame {
 
@@ -14,19 +12,30 @@ public class MainFrame extends JFrame {
         setTitle("网上书店订单管理系统 - 后台管理端");
         setSize(1200, 800);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setLocationRelativeTo(null); // 居中
+        setLocationRelativeTo(null);
+
+        // CardLayout 管理所有面板
+        cardLayout = new CardLayout();
+        mainPanel = new JPanel(cardLayout);
+
+        // 添加所有面板（必须和菜单一致）
+        mainPanel.add(new BookPanel(), "bookPanel");
+        mainPanel.add(new CustomerPanel(), "customerPanel");
+        mainPanel.add(new OrderPanel(), "orderPanel");
+        mainPanel.add(new ShippingPanel(), "shippingPanel");
+        mainPanel.add(new ReviewPanel(), "reviewPanel");
+        mainPanel.add(new ReportPanel(), "reportPanel");   // ← 统计报表
+
+        add(mainPanel, BorderLayout.CENTER);
 
         // 菜单栏
         JMenuBar menuBar = new JMenuBar();
-
-        // 文件菜单
         JMenu fileMenu = new JMenu("文件");
         JMenuItem exitItem = new JMenuItem("退出");
         exitItem.addActionListener(e -> System.exit(0));
         fileMenu.add(exitItem);
         menuBar.add(fileMenu);
 
-        // 管理菜单
         JMenu manageMenu = new JMenu("管理");
         JMenuItem bookItem = new JMenuItem("图书管理");
         JMenuItem customerItem = new JMenuItem("客户管理");
@@ -50,38 +59,15 @@ public class MainFrame extends JFrame {
         manageMenu.add(reportItem);
         menuBar.add(manageMenu);
 
-        // 帮助菜单
-        JMenu helpMenu = new JMenu("帮助");
-        JMenuItem aboutItem = new JMenuItem("关于");
-        aboutItem.addActionListener(e -> JOptionPane.showMessageDialog(this, "网上书店订单管理系统 v1.0\nJavaSE + Swing + JDBC + MySQL\n第二周完成核心业务，第三周实现桌面GUI"));
-        helpMenu.add(aboutItem);
-        menuBar.add(helpMenu);
-
         setJMenuBar(menuBar);
 
-        // 主内容区 - CardLayout
-        cardLayout = new CardLayout();
-        mainPanel = new JPanel(cardLayout);
-
-        mainPanel.add(new BookPanel(), "bookPanel");
-        mainPanel.add(new CustomerPanel(), "customerPanel");
-        mainPanel.add(new OrderPanel(), "orderPanel");
-        mainPanel.add(new ShippingPanel(), "shippingPanel");
-        mainPanel.add(new ReviewPanel(), "reviewPanel");
-
-        // 其他面板先用占位（后面几天填充）
-        mainPanel.add(new JLabel("统计报表面板（待实现）", SwingConstants.CENTER), "reportPanel");
-
-        add(mainPanel, BorderLayout.CENTER);
-
-        // 启动时显示登录对话框
+        // 显示登录对话框
         showLoginDialog();
     }
 
-    // 简单登录对话框（模态窗口）
     private void showLoginDialog() {
-        JDialog loginDialog = new JDialog(this, "登录 - 网上书店后台", true);
-        loginDialog.setSize(400, 300);
+        JDialog loginDialog = new JDialog(this, "用户登录", true);
+        loginDialog.setSize(350, 250);
         loginDialog.setLocationRelativeTo(this);
 
         JPanel panel = new JPanel(new GridLayout(4, 2, 10, 10));
@@ -103,11 +89,8 @@ public class MainFrame extends JFrame {
         loginButton.addActionListener(e -> {
             String username = usernameField.getText().trim();
             String password = new String(passwordField.getPassword());
-            String role = (String) roleCombo.getSelectedItem();
-
-            // 简单验证（真实项目应查 Users 表）
             if (username.equals("admin1") && password.equals("123456")) {
-                JOptionPane.showMessageDialog(this, "登录成功！角色: " + role);
+                JOptionPane.showMessageDialog(this, "登录成功！欢迎使用系统");
                 loginDialog.dispose();
             } else {
                 JOptionPane.showMessageDialog(this, "用户名或密码错误！", "登录失败", JOptionPane.ERROR_MESSAGE);
