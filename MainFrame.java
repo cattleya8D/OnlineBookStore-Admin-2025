@@ -66,10 +66,10 @@ public class MainFrame extends JFrame {
         mainPanel.add(new BookPanel(), "bookPanel");
         mainPanel.add(new CustomerPanel(), "customerPanel");
         mainPanel.add(new OrderPanel(), "orderPanel");
+        mainPanel.add(new ShippingPanel(), "shippingPanel");
+        mainPanel.add(new ReviewPanel(), "reviewPanel");
 
         // 其他面板先用占位（后面几天填充）
-        mainPanel.add(new JLabel("物流管理面板（待实现）", SwingConstants.CENTER), "shippingPanel");
-        mainPanel.add(new JLabel("评价管理面板（待实现）", SwingConstants.CENTER), "reviewPanel");
         mainPanel.add(new JLabel("统计报表面板（待实现）", SwingConstants.CENTER), "reportPanel");
 
         add(mainPanel, BorderLayout.CENTER);
