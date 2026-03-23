@@ -10,18 +10,14 @@ import java.util.List;
 public class ReviewService {
 
     private final ReviewDao reviewDao = new ReviewDao();
-    private final OrderDao orderDao = new OrderDao();  // 用于校验订单状态
+    private final OrderDao orderDao = new OrderDao();
 
     public boolean addReview(Review review) {
-        // 业务校验：订单必须是“已签收”或“已完成”
         Order order = orderDao.getOrderById(review.orderId());
         if (order == null || (!"已签收".equals(order.status()) && !"已完成".equals(order.status()))) {
             System.out.println("只有已签收或已完成的订单才能评价");
             return false;
         }
-
-        // 还可以加：同一个客户对同一订单的同一本书只能评一次（课设可简化不做）
-
         return reviewDao.addReview(review);
     }
 
@@ -34,22 +30,27 @@ public class ReviewService {
     }
 
     /**
-     * 分页 + 关键字搜索评价（供 GUI 调用）
-     * @param keyword 关键词
-     * @param page 当前页
-     * @param pageSize 每页条数
-     * @return 评价列表
+     * 分页 + 关键字搜索评价
      */
     public List<Review> getReviewsByKeyword(String keyword, int page, int pageSize) {
         return reviewDao.getReviewsByKeyword(keyword, page, pageSize);
     }
 
-    /**
-     * 获取符合条件的评价总数（用于分页计算）
-     * @param keyword 关键词
-     * @return 总条数
-     */
     public int getReviewCount(String keyword) {
         return reviewDao.getReviewCount(keyword);
+    }
+
+    /**
+     * 【新增】根据评价ID获取完整评价（含文字评论）
+     */
+    public Review getReviewById(long reviewId) {
+        return reviewDao.getReviewById(reviewId);
+    }
+
+    /**
+     * 兼容测试类调用的方法名（getReviewsByOrderId）
+     */
+    public List<Review> getReviewsByOrderId(long orderId) {
+        return getReviewsByOrder(orderId);
     }
 }
