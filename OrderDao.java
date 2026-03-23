@@ -1,8 +1,9 @@
 package com.bookstore.dao;
 
 import com.bookstore.entity.OrderDetail;
+import com.bookstore.entity.ShippingRecord;
 import com.bookstore.util.DbUtil;
-
+import com.bookstore.entity.Order;
 import java.math.BigDecimal;
 import java.sql.*;
 import java.util.ArrayList;
@@ -118,10 +119,10 @@ public class OrderDao {
         return list;
     }
 
-    // 创建物流记录（发货时调用）
+    // 创建物流记录（默认待发货）
     public boolean createShipping(long orderId, String trackingNumber, String company) {
         String sql = "INSERT INTO ShippingRecords (order_id, tracking_number, ship_date, status, company) " +
-                "VALUES (?, ?, NOW(), '已揽件', ?)";
+                "VALUES (?, ?, NOW(), 'PENDING', ?)";
         try (Connection conn = DbUtil.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setLong(1, orderId);
@@ -134,18 +135,151 @@ public class OrderDao {
         }
     }
 
-    // 更新物流状态（可选，后续扩展）
+    // 查询物流记录（用于界面显示）
+    public ShippingRecord getShippingByOrderId(long orderId) {
+        String sql = "SELECT * FROM ShippingRecords WHERE order_id = ?";
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, orderId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return new ShippingRecord(
+                            rs.getLong("shipping_id"),
+                            rs.getLong("order_id"),
+                            rs.getString("tracking_number"),
+                            rs.getTimestamp("ship_date").toLocalDateTime(),
+                            rs.getString("status"),
+                            rs.getString("company"),
+                            rs.getString("notes")
+                    );
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    // 根据订单ID查询订单主表信息
+    public Order getOrderById(long orderId) {
+        String sql = "SELECT * FROM Orders WHERE order_id = ?";
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, orderId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return new Order(
+                            rs.getLong("order_id"),
+                            rs.getLong("customer_id"),
+                            rs.getLong("user_id"),
+                            rs.getTimestamp("order_date").toLocalDateTime(),
+                            rs.getBigDecimal("total_amount"),
+                            rs.getString("status"),
+                            rs.getString("payment_method"),
+                            rs.getString("notes")
+                    );
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;  // 没找到返回 null
+    }
+
+    public List<Order> searchOrders(String keyword, String status, int page, int pageSize) {
+        List<Order> list = new ArrayList<>();
+        StringBuilder sql = new StringBuilder("SELECT o.* FROM Orders o LEFT JOIN Customers c ON o.customer_id = c.customer_id WHERE 1=1");
+        List<Object> params = new ArrayList<>();
+
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            String like = "%" + keyword.trim() + "%";
+            sql.append(" AND (o.order_id LIKE ? OR c.name LIKE ? OR c.phone LIKE ?)");
+            params.add(like);
+            params.add(like);
+            params.add(like);
+        }
+        if (status != null && !status.equals("全部")) {
+            sql.append(" AND o.status = ?");
+            params.add(status);
+        }
+        sql.append(" ORDER BY o.order_date DESC LIMIT ? OFFSET ?");
+        params.add(pageSize);
+        params.add((page - 1) * pageSize);
+
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+            for (int i = 0; i < params.size(); i++) {
+                ps.setObject(i + 1, params.get(i));
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    list.add(new Order(
+                            rs.getLong("order_id"),
+                            rs.getLong("customer_id"),
+                            rs.getLong("user_id"),
+                            rs.getTimestamp("order_date").toLocalDateTime(),
+                            rs.getBigDecimal("total_amount"),
+                            rs.getString("status"),
+                            rs.getString("payment_method"),
+                            rs.getString("notes")
+                    ));
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return list;
+    }
+
+    public int countOrders(String keyword, String status) {
+        StringBuilder sql = new StringBuilder("SELECT COUNT(*) FROM Orders o LEFT JOIN Customers c ON o.customer_id = c.customer_id WHERE 1=1");
+        List<Object> params = new ArrayList<>();
+
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            String like = "%" + keyword.trim() + "%";
+            sql.append(" AND (o.order_id LIKE ? OR c.name LIKE ? OR c.phone LIKE ?)");
+            params.add(like);
+            params.add(like);
+            params.add(like);
+        }
+        if (status != null && !status.equals("全部")) {
+            sql.append(" AND o.status = ?");
+            params.add(status);
+        }
+
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+            for (int i = 0; i < params.size(); i++) {
+                ps.setObject(i + 1, params.get(i));
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return 0;
+    }
+
+    /**
+     * 更新物流状态（例如：已揽件 → 运输中 → 已签收）
+     * @param orderId 订单ID（物流记录以订单ID唯一）
+     * @param newStatus 新状态（必须是 ShippingRecords.status 允许的值）
+     * @return 是否更新成功
+     */
     public boolean updateShippingStatus(long orderId, String newStatus) {
         String sql = "UPDATE ShippingRecords SET status = ? WHERE order_id = ?";
         try (Connection conn = DbUtil.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, newStatus);
             ps.setLong(2, orderId);
-            return ps.executeUpdate() > 0;
+            System.out.println("【DAO】执行更新: orderId=" + orderId + ", status=" + newStatus);
+            int rows = ps.executeUpdate();
+            System.out.println("【DAO】影响行数: " + rows);
+            return rows > 0;
         } catch (SQLException e) {
             e.printStackTrace();
             return false;
         }
     }
 }
-
